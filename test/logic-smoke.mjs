@@ -39,6 +39,7 @@ assert.match(mock, /id="running-prose"/, 'false-positive regression fixture is m
 assert.match(mock, /class="connector-card"/, 'live connector-card fixture is missing');
 assert.match(mock, /class="connector-app"/, 'connector iframe fixture is missing');
 assert.match(mock, /class="connector-fallback"/, 'connector failure fixture is missing');
+assert.match(mock, /this\.shadowRoot \|\| this\.attachShadow/, 'shadow fixture must survive detach and restore');
 assert.deepEqual(manifest.permissions, ['storage'], 'extension should retain storage-only permission');
 assert.match(popupHtml, /id="trimKeep" min="0" max="100" step="1"/, 'slider must cover 0 through 100');
 assert.match(popupHtml, /type="number" id="trimKeepVal" min="0" max="100"/, 'editable keep-count box is missing');

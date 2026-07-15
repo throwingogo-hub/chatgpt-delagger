@@ -39,6 +39,20 @@ Long ChatGPT threads can become expensive to lay out and repaint. Tool calls can
 
 Every optimization can be switched off instantly. Detached nodes are held in memory with lightweight placeholders and restored in their original position; GPT Delagger does not delete server-side messages.
 
+### What the default settings change
+
+On the included 141-turn offline fixture, GPT Delagger's default settings reduce the live page from 141 turns to 30 and from 839 DOM elements to 175.
+
+| State | Live turns | Live DOM elements |
+| --- | ---: | ---: |
+| GPT Delagger off | 141 | 839 |
+| Default settings | 30 | 175 |
+
+That means 107 old turns and 4 tool embeds are detached, leaving about **79% fewer live DOM elements** for the browser to manage.
+
+> [!NOTE]
+> Measured with `test/mock.html` on v1.4.0. This fixture demonstrates DOM reduction; it is not a universal FPS or latency claim.
+
 ## Install in 60 seconds
 
 ### From a GitHub release

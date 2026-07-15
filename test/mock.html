@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Delagger mock — realistic ChatGPT DOM</title>
+<link rel="icon" href="../icons/icon16.png">
 <style>
   body { margin: 0; background: #212121; color: #ececec; font: 15px/1.6 system-ui, sans-serif; }
   #thread { max-width: 760px; margin: 0 auto; padding: 24px 16px 120px; }
@@ -40,7 +41,7 @@
     connectedCallback() {
       const cmd = this.getAttribute('cmd') || '';
       const chip = this.getAttribute('chip') || 'ran · 12 lines';
-      const sr = this.attachShadow({ mode: 'open' });
+      const sr = this.shadowRoot || this.attachShadow({ mode: 'open' });
       sr.innerHTML = `
         <style>
           .card{border:1px solid #3a3a3a;border-radius:12px;padding:10px 14px;margin:8px 0;
