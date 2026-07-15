@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Delagger mock — realistic ChatGPT DOM</title>
+<style>
+  body { margin: 0; background: #212121; color: #ececec; font: 15px/1.6 system-ui, sans-serif; }
+  #thread { max-width: 760px; margin: 0 auto; padding: 24px 16px 120px; }
+  .turn { padding: 14px 0; border-bottom: 1px solid #2f2f2f; }
+  .who { font-weight: 600; font-size: 13px; color: #9b9b9b; margin-bottom: 6px; }
+  .markdown p { margin: 8px 0; }
+  pre { background: #0d0d0d; border-radius: 8px; padding: 12px; overflow: auto; font-size: 12.5px; }
+  .tool-card { border: 1px solid #3a3a3a; border-radius: 12px; padding: 10px 14px; margin: 8px 0;
+               display: flex; align-items: center; gap: 10px; background: #181818; }
+  .tc-icon { background: #0d0d0d; border-radius: 8px; padding: 6px 8px; font-family: monospace; }
+  .tc-body { flex: 1; min-width: 0; }
+  .tc-title { font-weight: 600; font-size: 14px; }
+  .tc-cmd { font-family: monospace; font-size: 12px; color: #b4b4b4; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; }
+  .tc-chip { border: 1px solid #4a4a4a; border-radius: 999px; padding: 3px 10px;
+             font-family: monospace; font-size: 12px; color: #cfcfcf; flex: none; }
+  .tc-chev { background: none; border: 0; color: #9b9b9b; font-size: 14px; cursor: pointer; }
+  .csp-badge { border:1px solid #7a4; border-radius: 999px; padding: 2px 8px; font-size: 11px; color:#b9d; float:right; }
+  .connector-card { margin: 8px 0; }
+  .connector-head { display:flex; align-items:center; gap:8px; color:#aaa; }
+  .connector-head .settings { margin-left:auto; }
+  .connector-app { min-height:72px; border:1px solid #3a3a3a; border-radius:12px; }
+  .connector-fallback { margin-top:8px; color:#f44; }
+  .image-loading-frame { width:480px; height:480px; border-radius:36px; background:#2d2d2f; }
+</style>
+</head>
+<body>
+<!-- No <article> anywhere: mirrors current chatgpt.com, where turns are plain
+     divs and the only stable hook is [data-message-author-role]. -->
+<main><div id="thread"></div></main>
+
+<script>
+  // Shadow-DOM tool card element — models an MCP embed rendered in a shadow root.
+  class ToolEmbed extends HTMLElement {
+    connectedCallback() {
+      const cmd = this.getAttribute('cmd') || '';
+      const chip = this.getAttribute('chip') || 'ran · 12 lines';
+      const sr = this.attachShadow({ mode: 'open' });
+      sr.innerHTML = `
+        <style>
+          .card{border:1px solid #3a3a3a;border-radius:12px;padding:10px 14px;margin:8px 0;
+                display:flex;align-items:center;gap:10px;background:#181818;
+                font:14px system-ui,sans-serif;color:#ececec}
+          .icon{background:#0d0d0d;border-radius:8px;padding:6px 8px;font-family:monospace}
+          .body{flex:1;min-width:0}
+          .title{font-weight:600}
+          .cmd{font-family:monospace;font-size:12px;color:#b4b4b4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .chip{border:1px solid #4a4a4a;border-radius:999px;padding:3px 10px;font-family:monospace;font-size:12px;color:#cfcfcf}
+        </style>
+        <div class="card"><span class="icon">&gt;_</span>
+          <span class="body"><span class="title">Bash</span><div class="cmd">${cmd}</div></span>
+          <span class="chip">${chip}</span></div>`;
+    }
+  }
+  customElements.define('tool-embed', ToolEmbed);
+
+  const thread = document.getElementById('thread');
+  const codeBlock = () => {
+    const lines = Array.from({ length: 40 }, (_, i) =>
+      `const value_${i} = compute(${i}); // simulated heavy line ${i}`).join('\n');
+    return `<pre><code>${lines}</code></pre>`;
+  };
+  const toolCard = (cmd, chip) => `
+    <div class="tool-card">
+      <span class="tc-icon">&gt;_</span>
+      <span class="tc-body"><span class="tc-title">Bash</span><div class="tc-cmd">${cmd}</div></span>
+      <span class="tc-chip">${chip}</span>
+      <button class="tc-chev">▾</button>
+    </div>`;
+  const connectorCard = (name = 'DevSpace') => `
+    <div class="connector-card">
+      <div class="connector-head">
+        <span role="button"><img alt="${name}" width="20" height="20"> <button>${name}</button></span>
+        <span><button class="settings" aria-label="CSP is off. Open connector advanced settings">CSP off</button></span>
+      </div>
+    </div>
+    <div class="connector-app"><iframe title="ui://devspace/workspace-app.html"></iframe></div>`;
+  const failedConnectorCard = (name = 'DevSpace') => `
+    <div class="connector-card">
+      <div class="connector-head">
+        <span role="button"><img alt="${name}" width="20" height="20"> <button>${name}</button></span>
+        <span><button class="settings" aria-label="CSP is off. Open connector advanced settings">CSP off</button></span>
+      </div>
+    </div>
+    <div class="connector-fallback"><aside>
+      <div><strong>載入應用程式時發生錯誤</strong><div>Failed to fetch template</div></div>
+      <button>重試</button>
+    </aside></div>`;
+
+  let html = '';
+  for (let i = 1; i <= 140; i++) {
+    const user = i % 2 === 1;
+    let inner, role = user ? 'user' : 'assistant';
+    if (user) {
+      inner = `<div class="markdown"><p>User question ${i}: check the docker container and summarise the logs.</p></div>`;
+    } else if (i % 14 === 0) {
+      // pure DevSpace tool turn (own avatar + CSP badge + light-DOM card)
+      inner = `<span class="csp-badge">CSP 關閉</span>${toolCard(`D=/Applications/Docker.app/Contents/Resources/bin/docker; "$D" stats --no-stream`, `ran · ${60 + i} lines`)}`;
+    } else if (i % 28 === 0) {
+      // Chinese chip variant
+      inner = `<span class="csp-badge">CSP 關閉</span>${toolCard(`"$D" logs devspace --tail 200`, '已執行 · 42 行')}`;
+    } else if (i === 96) {
+      // mixed turn: prose + card + prose — card vanishes, prose stays
+      inner = `<div class="markdown"><p id="keep-before">KEEP-BEFORE: checking the container now.</p></div>
+               ${toolCard(`"$D" rm -f devspace`, 'ran · 5 lines')}
+               <div class="markdown"><p id="keep-after">KEEP-AFTER: container removed successfully.</p></div>`;
+    } else if (i === 98) {
+      // Mirrors the current live ChatGPT connector-card contract. Ordinary
+      // prose in the same assistant turn must survive.
+      inner = `<div class="markdown"><p id="keep-live-prose">KEEP-LIVE-PROSE: I am checking the workspace.</p></div>
+               ${connectorCard()}`;
+    } else if (i === 102) {
+      // Regression: this sentence used to be falsely classified as a tool chip.
+      inner = `<div class="markdown"><ul><li id="running-prose">Running scripts that modify files</li></ul></div>`;
+    } else if (i === 104) {
+      // The iframe failure UI shown by ChatGPT after template loading fails.
+      inner = failedConnectorCard();
+    } else if (i === 106) {
+      // Large animated image-generation placeholder. Completed images do not
+      // use image-gen-loading-state-frame and must remain visible.
+      inner = `<div data-testid="image-gen-loading-state-frame" class="image-loading-frame">
+        <div data-testid="image-gen-loading-state-entry-surface">
+          <div data-testid="image-gen-loading-state" aria-label="Generating image..."></div>
+        </div>
+      </div>`;
+    } else if (i === 100) {
+      // shadow-DOM tool card (the hard case; 100 hits no earlier branch)
+      inner = `<span class="csp-badge">CSP 關閉</span><tool-embed cmd="&quot;$D&quot; ps -a" chip="ran · 20 lines"></tool-embed>`;
+    } else if (i % 6 === 0) {
+      inner = `<div class="markdown"><p>Assistant reply ${i} with a big code block:</p>${codeBlock()}</div>`;
+    } else {
+      inner = `<div class="markdown"><p>Assistant reply ${i}. ` +
+              `Long-form explanation text repeated to add weight. `.repeat(12) + `</p></div>`;
+    }
+    // Turn wrapper is a plain div with NO stable testid — like the real site.
+    html += `
+      <div class="turn">
+        <div class="who">${user ? 'You' : (i % 14 === 0 || i % 28 === 0 || i === 100 || i === 96 ? 'DevSpace' : 'ChatGPT')}</div>
+        <div data-message-author-role="${role}" data-message-id="msg-${i}">${inner}</div>
+      </div>`;
+  }
+  // one proper role="tool" turn
+  html += `
+    <div class="turn">
+      <div class="who">DevSpace</div>
+      <div data-message-author-role="tool" data-message-id="msg-141">
+        ${toolCard(`echo '--- CSP off ---'`, 'ran · 20 lines')}
+      </div>
+    </div>`;
+  thread.innerHTML = html;
+</script>
+
+<script src="../content.js"></script>
+</body>
+</html>

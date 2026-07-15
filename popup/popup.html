@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GPT Delagger</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13.5 2 5.5 13.5h5l-1.5 8.5 8.5-11.5h-5.2L13.5 2z"/>
+      </svg>
+      <div class="brand-txt">
+        <h1>delag<span class="amber">.</span></h1>
+        <p>for chatgpt.com</p>
+      </div>
+    </div>
+    <label class="switch master" title="Enable or disable everything">
+      <input type="checkbox" id="enabled">
+      <span class="knob" aria-hidden="true"></span>
+      <span class="sr-only">Enabled on chatgpt.com</span>
+    </label>
+  </header>
+
+  <main id="controls">
+
+    <section>
+      <h2>Speed</h2>
+
+      <label class="row">
+        <span class="txt">
+          <span class="name">Lightweight rendering</span>
+          <span class="desc">Skip layout work for off-screen messages</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="liteRender"><span class="knob"></span></span>
+      </label>
+
+      <label class="row">
+        <span class="txt">
+          <span class="name">Trim long chats</span>
+          <span class="desc">Old messages wait behind a "show more" button</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="trimEnabled"><span class="knob"></span></span>
+      </label>
+
+      <div class="row slider-row">
+        <label class="slider-label" for="trimKeep">keep last</label>
+        <input type="range" id="trimKeep" min="0" max="100" step="1" value="30">
+        <input type="number" id="trimKeepVal" min="0" max="100" step="1" value="30"
+          inputmode="numeric" aria-label="Number of recent messages to keep">
+      </div>
+
+      <label class="row">
+        <span class="txt">
+          <span class="name">Instant UI</span>
+          <span class="desc">Remove hover and layout transitions</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="noTransitions"><span class="knob"></span></span>
+      </label>
+
+      <label class="row">
+        <span class="txt">
+          <span class="name">Remove glass blur</span>
+          <span class="desc">Backdrop blur is costly on weak GPUs</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="noBlur"><span class="knob"></span></span>
+      </label>
+    </section>
+
+    <section>
+      <h2>Tool calls</h2>
+
+      <label class="row">
+        <span class="txt">
+          <span class="name">Block heavy embeds</span>
+          <span class="desc">Detach MCP apps and image-loading frames before paint</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="hideTools"><span class="knob"></span></span>
+      </label>
+
+      <button id="zap" class="ghost">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.6"/></svg>
+        Pick an element to hide
+      </button>
+
+      <details>
+        <summary>Custom hide rules</summary>
+        <textarea id="customSelectors" rows="4" spellcheck="false"
+          placeholder="one CSS selector per line&#10;lines starting with ! are ignored"></textarea>
+        <p class="hint">Zapped elements land here. Delete a line to bring it back.</p>
+      </details>
+    </section>
+
+  </main>
+
+  <footer id="hud" aria-live="polite">connecting…</footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

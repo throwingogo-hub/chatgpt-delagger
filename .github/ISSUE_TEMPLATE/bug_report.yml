@@ -1,0 +1,67 @@
+name: Bug report
+description: Report broken behavior, a ChatGPT markup change, or a false positive.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Remove personal conversation data, account details, and tokens from screenshots or HTML snippets.
+  - type: input
+    id: version
+    attributes:
+      label: GPT Delagger version
+      placeholder: "1.4.0"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: "Chrome 138"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected feature
+      options:
+        - Lightweight rendering
+        - Trim long chats
+        - Block heavy embeds
+        - Zap mode
+        - Popup or settings
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Explain the observed and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open ...
+        2. Enable ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized screenshot or DOM fixture
+      description: Optional. Do not post private conversation content.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I reloaded the extension and the affected ChatGPT tab.
+          required: true
+        - label: I removed personal and sensitive data from this report.
+          required: true

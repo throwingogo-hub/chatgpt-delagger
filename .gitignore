@@ -1,0 +1,17 @@
+# Release artifacts
+*.zip
+dist/
+
+# Browser automation artifacts
+output/
+.playwright-cli/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

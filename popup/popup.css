@@ -1,0 +1,176 @@
+/* GPT Delagger popup — graphite + tachometer amber */
+:root {
+  --bg: #14161a;
+  --panel: #1b1e24;
+  --line: #262b33;
+  --text: #e7e9ec;
+  --muted: #8b919b;
+  --amber: #f0a93c;
+  --amber-ink: #1c1204;
+  --mono: ui-monospace, "Cascadia Code", Consolas, "SF Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 336px;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 13px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- header */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(240,169,60,.06), transparent 70%);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.bolt { width: 22px; height: 22px; fill: var(--amber); flex: none; }
+.brand-txt h1 {
+  font: 600 17px/1 var(--mono);
+  letter-spacing: -.02em;
+}
+.amber { color: var(--amber); }
+.brand-txt p { font: 400 11px/1.6 var(--sans); color: var(--muted); }
+
+/* ---------------------------------------------------------------- layout */
+section { padding: 10px 16px 14px; }
+section + section { border-top: 1px solid var(--line); }
+h2 {
+  font: 600 10px/1 var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  padding: 8px 0 10px;
+}
+
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 7px 0;
+  cursor: pointer;
+}
+.txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.name { font-weight: 500; }
+.desc { font-size: 11px; color: var(--muted); }
+
+/* master-off dimming */
+body.off main { opacity: .38; pointer-events: none; }
+body.off main, main { transition: opacity .12s linear; }
+@media (prefers-reduced-motion: reduce) { body.off main, main { transition: none; } }
+
+/* ---------------------------------------------------------------- switch */
+.switch { position: relative; flex: none; display: inline-block; width: 36px; height: 21px; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.switch .knob {
+  position: absolute; inset: 0;
+  background: #2a2f38;
+  border: 1px solid #343a45;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.switch .knob::after {
+  content: "";
+  position: absolute; top: 2px; left: 2px;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: #737a85;
+}
+.switch input:checked + .knob { background: var(--amber); border-color: var(--amber); }
+.switch input:checked + .knob::after { left: 17px; background: var(--amber-ink); }
+.switch input:focus-visible + .knob { outline: 2px solid var(--amber); outline-offset: 2px; }
+.switch.master { transform: scale(1.12); transform-origin: right center; }
+
+/* ---------------------------------------------------------------- slider */
+.slider-row { gap: 10px; padding-left: 14px; cursor: default; }
+.slider-label { font: 500 11px/1 var(--mono); color: var(--muted); flex: none; }
+#trimKeepVal {
+  font: 600 12px/1 var(--mono);
+  color: var(--amber);
+  width: 43px; padding: 4px 3px;
+  text-align: center; flex: none;
+  background: var(--panel);
+  border: 1px solid #343a45;
+  border-radius: 6px;
+  outline: none;
+  appearance: textfield;
+}
+#trimKeepVal::-webkit-inner-spin-button { appearance: none; }
+#trimKeepVal:focus { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
+#trimKeepVal:disabled { color: #4a505b; }
+input[type="range"] {
+  flex: 1; appearance: none; -webkit-appearance: none;
+  height: 3px; border-radius: 2px;
+  background: #2a2f38;
+  outline-offset: 4px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none; -webkit-appearance: none;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--amber);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--amber);
+}
+input[type="range"]:disabled::-webkit-slider-thumb { background: #4a505b; box-shadow: 0 0 0 1px #4a505b; }
+input[type="range"]:focus-visible { outline: 2px solid var(--amber); }
+
+/* ---------------------------------------------------------------- button */
+.ghost {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin: 6px 0 4px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--text);
+  border: 1px dashed #3a414b;
+  border-radius: 9px;
+  font: 500 12.5px/1 var(--sans);
+  cursor: pointer;
+}
+.ghost svg { width: 15px; height: 15px; fill: var(--amber); }
+.ghost:hover { border-color: var(--amber); background: rgba(240,169,60,.07); }
+.ghost:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- details */
+details { margin-top: 6px; }
+summary {
+  font: 500 11.5px/1.4 var(--sans);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 0;
+  list-style-position: outside;
+}
+summary:hover { color: var(--text); }
+textarea {
+  width: 100%; margin-top: 6px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 9px;
+  font: 400 11px/1.5 var(--mono);
+  resize: vertical;
+}
+textarea:focus-visible { outline: 2px solid var(--amber); border-color: transparent; }
+.hint { font-size: 10.5px; color: var(--muted); margin-top: 5px; }
+
+/* ---------------------------------------------------------------- HUD */
+footer {
+  padding: 9px 16px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  font: 500 11px/1.4 var(--mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+footer .val { color: var(--amber); }
+footer a { color: var(--amber); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+footer .dim { opacity: .75; }
