@@ -7,7 +7,6 @@
     and detaches heavy MCP, connector, and tool-call embeds.
   </p>
   <p>
-    <a href="https://github.com/throwingogo-hub/chatgpt-delagger/actions/workflows/ci.yml"><img src="https://github.com/throwingogo-hub/chatgpt-delagger/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f0a93c" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/Manifest-V3-4285F4?logo=googlechrome&logoColor=white" alt="Chrome Manifest V3">
     <img src="https://img.shields.io/badge/dependencies-0-2ea44f" alt="Zero dependencies">
