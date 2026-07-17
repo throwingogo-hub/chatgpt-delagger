@@ -7,12 +7,13 @@ const DEFAULTS = {
   trimEnabled: true,
   trimKeep: 30,
   hideTools: true,
+  toolsKeepNewest: false,
   noTransitions: true,
   noBlur: false,
   customSelectors: ''
 };
 
-const TOGGLES = ['enabled', 'liteRender', 'trimEnabled', 'hideTools', 'noTransitions', 'noBlur'];
+const TOGGLES = ['enabled', 'liteRender', 'trimEnabled', 'hideTools', 'toolsKeepNewest', 'noTransitions', 'noBlur'];
 const $ = id => document.getElementById(id);
 const hasChrome = typeof chrome !== 'undefined' && !!(chrome.storage && chrome.storage.sync);
 
@@ -35,6 +36,7 @@ function reflect() {
   const trimDisabled = !on || !$('trimEnabled').checked;
   $('trimKeep').disabled = trimDisabled;
   $('trimKeepVal').disabled = trimDisabled;
+  $('toolsKeepNewest').disabled = !on || !$('hideTools').checked;
 }
 
 function clampKeep(value) {
@@ -66,11 +68,18 @@ load(S => {
     debounceSave({ trimKeep: value });
   });
   $('trimKeepVal').addEventListener('change', e => {
+    if (e.target.value === '') {   // cleared box must not collapse keep to 0
+      e.target.value = $('trimKeep').value;
+      return;
+    }
     const value = clampKeep(e.target.value);
     e.target.value = value;
     $('trimKeep').value = value;
     save({ trimKeep: value });
   });
+  if (hasChrome && chrome.runtime && chrome.runtime.getManifest) {
+    $('version').textContent = ` · v${chrome.runtime.getManifest().version}`;
+  }
   $('customSelectors').value = S.customSelectors;
   $('customSelectors').addEventListener('input', e => {
     debounceSave({ customSelectors: e.target.value });

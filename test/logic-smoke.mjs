@@ -40,10 +40,23 @@ assert.match(mock, /class="connector-card"/, 'live connector-card fixture is mis
 assert.match(mock, /class="connector-app"/, 'connector iframe fixture is missing');
 assert.match(mock, /class="connector-fallback"/, 'connector failure fixture is missing');
 assert.match(mock, /this\.shadowRoot \|\| this\.attachShadow/, 'shadow fixture must survive detach and restore');
+assert.match(mock, /id="composer"/, 'composer fixture is missing');
+assert.match(content, /p\.querySelector\(COMPOSER_SEL\)\) break/, 'turn discovery must stop before the composer');
+assert.match(content, /turn\.tagName === 'MAIN'/, 'page chrome must never be detached as a turn');
+assert.match(content, /newValue \?\? DEFAULTS\[k\]/, 'removed storage keys must fall back to defaults');
+assert.match(popup, /e\.target\.value = \$\('trimKeep'\)\.value/, 'cleared keep box must restore, not collapse to 0');
+assert.match(content, /toolsKeepNewest: false/, 'keep-newest default is missing in content script');
+assert.match(popup, /toolsKeepNewest: false/, 'keep-newest default is missing in popup');
+assert.match(popupHtml, /id="toolsKeepNewest"/, 'keep-newest toggle is missing in popup');
+assert.match(content, /:not\(\[data-gptdelag-keep\]\)/, 'kept embed must be exempt from the role=tool CSS rule');
+assert.match(content, /blockExactToolNodes\(scope\);\s*\n\s*enforceToolKeep\(\)/, 'keep flag must move before paint in the observer pass');
+// Fixture branch order: exact-index turns must not be shadowed by the modulo branches.
+assert.ok(mock.indexOf('i === 98') < mock.indexOf('i % 14 === 0'), 'connector fixture must render (98 is a multiple of 14)');
+assert.ok(mock.indexOf('i % 28 === 0') < mock.indexOf('i % 14 === 0'), 'Chinese chip fixture must render (28 is a multiple of 14)');
 assert.deepEqual(manifest.permissions, ['storage'], 'extension should retain storage-only permission');
 assert.match(popupHtml, /id="trimKeep" min="0" max="100" step="1"/, 'slider must cover 0 through 100');
 assert.match(popupHtml, /type="number" id="trimKeepVal" min="0" max="100"/, 'editable keep-count box is missing');
-assert.equal(manifest.version, '1.4.0');
+assert.equal(manifest.version, '1.5.0');
 assert.doesNotMatch(popup, /tab\.url/, 'popup must not require tabs URL permission');
 
 console.log('logic smoke checks passed');

@@ -33,7 +33,14 @@
 <body>
 <!-- No <article> anywhere: mirrors current chatgpt.com, where turns are plain
      divs and the only stable hook is [data-message-author-role]. -->
-<main><div id="thread"></div></main>
+<main>
+  <div id="thread"></div>
+  <!-- Composer, like the real site: must never be tagged or detached as a turn. -->
+  <form id="composer" style="position:fixed;bottom:0;left:0;right:0;padding:12px;background:#171717">
+    <div contenteditable="true" role="textbox" aria-label="Message ChatGPT"
+      style="max-width:760px;margin:0 auto;border:1px solid #3a3a3a;border-radius:12px;padding:10px 14px;min-height:22px"></div>
+  </form>
+</main>
 
 <script>
   // Shadow-DOM tool card element — models an MCP embed rendered in a shadow root.
@@ -99,12 +106,6 @@
     let inner, role = user ? 'user' : 'assistant';
     if (user) {
       inner = `<div class="markdown"><p>User question ${i}: check the docker container and summarise the logs.</p></div>`;
-    } else if (i % 14 === 0) {
-      // pure DevSpace tool turn (own avatar + CSP badge + light-DOM card)
-      inner = `<span class="csp-badge">CSP 關閉</span>${toolCard(`D=/Applications/Docker.app/Contents/Resources/bin/docker; "$D" stats --no-stream`, `ran · ${60 + i} lines`)}`;
-    } else if (i % 28 === 0) {
-      // Chinese chip variant
-      inner = `<span class="csp-badge">CSP 關閉</span>${toolCard(`"$D" logs devspace --tail 200`, '已執行 · 42 行')}`;
     } else if (i === 96) {
       // mixed turn: prose + card + prose — card vanishes, prose stays
       inner = `<div class="markdown"><p id="keep-before">KEEP-BEFORE: checking the container now.</p></div>
@@ -132,6 +133,12 @@
     } else if (i === 100) {
       // shadow-DOM tool card (the hard case; 100 hits no earlier branch)
       inner = `<span class="csp-badge">CSP 關閉</span><tool-embed cmd="&quot;$D&quot; ps -a" chip="ran · 20 lines"></tool-embed>`;
+    } else if (i % 28 === 0) {
+      // Chinese chip variant — checked before %14 (every multiple of 28 is one of 14)
+      inner = `<span class="csp-badge">CSP 關閉</span>${toolCard(`"$D" logs devspace --tail 200`, '已執行 · 42 行')}`;
+    } else if (i % 14 === 0) {
+      // pure DevSpace tool turn (own avatar + CSP badge + light-DOM card)
+      inner = `<span class="csp-badge">CSP 關閉</span>${toolCard(`D=/Applications/Docker.app/Contents/Resources/bin/docker; "$D" stats --no-stream`, `ran · ${60 + i} lines`)}`;
     } else if (i % 6 === 0) {
       inner = `<div class="markdown"><p>Assistant reply ${i} with a big code block:</p>${codeBlock()}</div>`;
     } else {
@@ -141,7 +148,7 @@
     // Turn wrapper is a plain div with NO stable testid — like the real site.
     html += `
       <div class="turn">
-        <div class="who">${user ? 'You' : (i % 14 === 0 || i % 28 === 0 || i === 100 || i === 96 ? 'DevSpace' : 'ChatGPT')}</div>
+        <div class="who">${user ? 'You' : ((i % 14 === 0 && i !== 98) || i === 100 || i === 96 ? 'DevSpace' : 'ChatGPT')}</div>
         <div data-message-author-role="${role}" data-message-id="msg-${i}">${inner}</div>
       </div>`;
   }

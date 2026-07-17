@@ -14,7 +14,7 @@
       </svg>
       <div class="brand-txt">
         <h1>delag<span class="amber">.</span></h1>
-        <p>for chatgpt.com</p>
+        <p>for chatgpt.com<span id="version"></span></p>
       </div>
     </div>
     <label class="switch master" title="Enable or disable everything">
@@ -78,6 +78,14 @@
           <span class="desc">Detach MCP apps and image-loading frames before paint</span>
         </span>
         <span class="switch"><input type="checkbox" id="hideTools"><span class="knob"></span></span>
+      </label>
+
+      <label class="row">
+        <span class="txt">
+          <span class="name">Keep newest embed</span>
+          <span class="desc">Only the latest tool embed stays on screen</span>
+        </span>
+        <span class="switch"><input type="checkbox" id="toolsKeepNewest"><span class="knob"></span></span>
       </label>
 
       <button id="zap" class="ghost">

@@ -11,7 +11,7 @@
   'use strict';
 
   const IS_EXT = typeof chrome !== 'undefined' && !!(chrome.storage && chrome.storage.sync);
-  const EXT_VERSION = '1.4.0';
+  const EXT_VERSION = '1.5.0';
 
   const DEFAULTS = {
     enabled: true,
@@ -19,6 +19,7 @@
     trimEnabled: true,    // hide old turns behind a "show more" pill
     trimKeep: 30,
     hideTools: true,      // hide MCP / tool-run embeds
+    toolsKeepNewest: false, // with hideTools: keep only the newest embed visible
     noTransitions: true,  // kill CSS transitions site-wide
     noBlur: false,        // kill backdrop-filter blur
     customSelectors: ''   // one CSS selector per line; zap mode appends here
@@ -90,7 +91,7 @@
     `);
     css.push(`[data-gptdelag-old]{display:none !important}`);
     if (S.hideTools) css.push(`
-      [data-message-author-role="tool"]{display:none !important}
+      [data-message-author-role="tool"]:not([data-gptdelag-keep]):not([data-gptdelag-keep] *){display:none !important}
       [data-gptdelag-tool]{display:none !important}
     `);
     for (const line of S.customSelectors.split('\n')) {
@@ -104,12 +105,17 @@
   // ---------------------------------------------------------------- turns
   // A "turn" is the outermost ancestor of a message that still wraps only that
   // one message — i.e. the per-message block in the thread list.
+  // Anything the user can type into must never end up inside a detached turn.
+  // In a one-message conversation the sibling-count check can't stop the climb,
+  // so this guard is what keeps the composer out of the discovered turn block.
+  const COMPOSER_SEL = 'form,textarea,[contenteditable="true"]';
   function turnOf(msg) {
     let turn = msg;
     for (let i = 0; i < 10; i++) {
       const p = turn.parentElement;
-      if (!p || p === document.body) break;
+      if (!p || p === document.body || p.tagName === 'MAIN') break;
       if (p.querySelectorAll(MSG_SEL).length > 1) break; // parent holds siblings → stop
+      if (p.querySelector(COMPOSER_SEL)) break;
       turn = p;
     }
     return turn;
@@ -144,6 +150,9 @@
 
   function detachTrimmedTurn(turn) {
     if (!turn || !turn.isConnected || trimmedTurns.has(turn)) return;
+    // Never detach page chrome, even if turn discovery over-reached.
+    if (turn === document.body || turn.tagName === 'MAIN'
+        || turn.querySelector(COMPOSER_SEL)) return;
     turn.setAttribute('data-gptdelag-old', '1'); // pre-detach CSS safety net
     const marker = document.createComment('gptdelag-trim-placeholder');
     turn.replaceWith(marker);
@@ -183,6 +192,10 @@
 
   function blockToolNode(el) {
     if (!el || el.nodeType !== 1 || !el.isConnected || blockedTools.has(el)) return;
+    // Keep-newest mode: the flagged embed — and anything containing or inside
+    // it — stays live until enforceToolKeep moves the flag to a newer embed.
+    if (el.closest('[data-gptdelag-keep]')
+        || (el.querySelector && el.querySelector('[data-gptdelag-keep]'))) return;
     el.setAttribute('data-gptdelag-tool', '1'); // pre-detach CSS safety net
     const marker = document.createComment('gptdelag-tool-placeholder');
     el.replaceWith(marker);
@@ -217,7 +230,100 @@
     blockedTools.clear();
   }
 
+  // ---------------------------------------------------------- keep-newest embed
+  // With "keep newest tool embed" on, the most recent blocked embed group is
+  // restored and flagged with data-gptdelag-keep; every older embed stays
+  // detached. When a newer embed appears, the flag moves to it in the same
+  // synchronous pass, so old and new swap before the next paint.
+  function keptNodes() {
+    return [...document.querySelectorAll('[data-gptdelag-keep]')];
+  }
+
+  function unkeepAll(reblock) {
+    for (const el of keptNodes()) {
+      el.removeAttribute('data-gptdelag-keep');
+      if (reblock) blockToolNode(el);
+    }
+  }
+
+  function isBefore(a, b) { // true when b follows a in document order
+    return !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }
+
+  function newestBlockedMarker() {
+    let newest = null;
+    for (const marker of blockedTools.values()) {
+      if (!marker.isConnected) continue; // nested inside a trimmed turn → stays old
+      if (!newest || isBefore(newest, marker)) newest = marker;
+    }
+    return newest;
+  }
+
+  // One embed can be detached as several sibling nodes (connector header, app
+  // iframe, trailing separator). The group of a marker is every blocked marker
+  // in the same tagged turn or, outside message wrappers, the run of adjacent
+  // sibling markers. A blocked node that is itself a whole turn is its own group.
+  function markerGroup(marker) {
+    const entries = [...blockedTools].filter(([, m]) => m.isConnected);
+    const group = new Set([marker]);
+    const turn = marker.parentElement && marker.parentElement.closest('[data-gptdelag-turn]');
+    if (turn) {
+      for (const [, m] of entries) if (turn.contains(m)) group.add(m);
+      return group;
+    }
+    const nodeFor = new Map(entries.map(([n, m]) => [m, n]));
+    const wholeTurn = m => {
+      const n = nodeFor.get(m);
+      return !n || n.matches(MSG_SEL) || !!n.querySelector(MSG_SEL);
+    };
+    if (wholeTurn(marker)) return group;
+    const skipWs = (n, dir) => {
+      while (n && n.nodeType === 3 && !n.textContent.trim()) n = n[dir];
+      return n;
+    };
+    for (const dir of ['previousSibling', 'nextSibling']) {
+      let n = skipWs(marker[dir], dir);
+      while (n && nodeFor.has(n) && !wholeTurn(n)) { group.add(n); n = skipWs(n[dir], dir); }
+    }
+    return group;
+  }
+
+  function restoreKeepGroup(group) {
+    // Restoring a node can reconnect markers nested inside it — loop until the
+    // kept subtree holds no blocked placeholders.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [node, m] of [...blockedTools]) {
+        const inKept = m.isConnected && m.parentElement
+          && m.parentElement.closest('[data-gptdelag-keep]');
+        if (!group.has(m) && !inKept) continue;
+        node.removeAttribute('data-gptdelag-tool');
+        if (group.has(m)) node.setAttribute('data-gptdelag-keep', '1');
+        if (m.isConnected) m.replaceWith(node);
+        blockedTools.delete(node);
+        changed = true;
+      }
+    }
+  }
+
+  function enforceToolKeep() {
+    if (!S.enabled || !S.hideTools) return;
+    if (!S.toolsKeepNewest) { unkeepAll(true); return; }
+    const marker = newestBlockedMarker();
+    if (!marker) return;                       // nothing newer blocked → kept set stands
+    const kept = keptNodes();
+    const anchor = kept[kept.length - 1];      // last kept node in document order
+    if (anchor && isBefore(marker, anchor)) return; // kept embed is still the newest
+    unkeepAll(true);
+    restoreKeepGroup(markerGroup(marker));
+  }
+
   // ---------------------------------------------------------------- trimming
+  function clampedKeep() {
+    return Math.max(0, Math.min(100, Number(S.trimKeep) || 0));
+  }
+
   let pill = null;
   function ensurePill() {
     if (!pill || !pill.isConnected) {
@@ -229,7 +335,8 @@
       const all = document.createElement('button');
       all.textContent = 'Show all';
       more.addEventListener('click', () => {
-        extraShown += Math.max(10, Number(S.trimKeep) || 0);
+        // Same clamped batch size the pill label advertises.
+        extraShown += Math.max(10, clampedKeep());
         apply();
       });
       all.addEventListener('click', () => { showAll = true; apply(); });
@@ -241,7 +348,7 @@
   }
 
   function applyTrim(turns) {
-    const configuredKeep = Math.max(0, Math.min(100, Number(S.trimKeep) || 0));
+    const configuredKeep = clampedKeep();
     const keep = (S.enabled && S.trimEnabled && !showAll)
       ? configuredKeep + extraShown
       : Infinity;
@@ -469,12 +576,13 @@
     }
     pruneBlockedTools();
     pruneTrimmedTurns();
-    if (!S.enabled || !S.hideTools) restoreBlockedTools();
+    if (!S.enabled || !S.hideTools) { restoreBlockedTools(); unkeepAll(false); }
     if (!S.enabled || !S.trimEnabled) restoreTrimmedTurns();
     setCss(buildCss());
     const turns = getTurns();
     applyTrim(turns);
     markTools(turns);
+    enforceToolKeep();
   }
 
   const mo = new MutationObserver(muts => {
@@ -490,6 +598,7 @@
         }
       }
       for (const scope of scopes) blockExactToolNodes(scope);
+      enforceToolKeep(); // move the keep flag to a just-streamed embed pre-paint
     }
     // Newly hydrated conversation turns are trimmed in this observer callback,
     // before the browser's next paint. Ordinary token-stream mutations do not
@@ -659,10 +768,11 @@
     chrome.storage.sync.get(DEFAULTS, v => { S = { ...DEFAULTS, ...v }; apply(); });
     chrome.storage.onChanged.addListener((ch, area) => {
       if (area !== 'sync') return;
-      for (const k in ch) if (k in DEFAULTS) S[k] = ch[k].newValue;
+      // A removed key arrives with newValue undefined — fall back to defaults.
+      for (const k in ch) if (k in DEFAULTS) S[k] = ch[k].newValue ?? DEFAULTS[k];
       if (ch.trimEnabled || ch.trimKeep) { showAll = false; extraShown = 0; }
-      // hideTools may have toggled — clear scan cache so cards re-evaluate.
-      if (ch.hideTools) for (const t of document.querySelectorAll('[data-gptdelag-scanned]'))
+      // The blocker may have toggled — clear scan cache so cards re-evaluate.
+      if (ch.hideTools || ch.enabled) for (const t of document.querySelectorAll('[data-gptdelag-scanned]'))
         t.removeAttribute('data-gptdelag-scanned');
       apply();
     });
@@ -677,8 +787,9 @@
     window.__gptdelag = {
       set(part) {
         Object.assign(S, part);
-        if ('hideTools' in part) for (const t of document.querySelectorAll('[data-gptdelag-scanned]'))
-          t.removeAttribute('data-gptdelag-scanned');
+        if ('hideTools' in part || 'enabled' in part)
+          for (const t of document.querySelectorAll('[data-gptdelag-scanned]'))
+            t.removeAttribute('data-gptdelag-scanned');
         if ('trimEnabled' in part || 'trimKeep' in part) { showAll = false; extraShown = 0; }
         apply();
       },

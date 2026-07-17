@@ -33,6 +33,7 @@ Long ChatGPT threads can become expensive to lay out and repaint. Tool calls can
 | ⚡ | **Lightweight rendering** | Uses `content-visibility: auto` so off-screen messages skip layout and paint work. |
 | ✂️ | **Reversible chat trimming** | Detaches old turns from the live DOM and restores them on demand. Keep anywhere from 0 to 100 recent turns mounted. |
 | 🧩 | **Heavy embed blocking** | Detaches MCP apps, connector cards, tool-run UI, failure fallbacks, and image-generation loading frames. |
+| 📌 | **Keep newest embed** | Optional: only the latest tool embed stays mounted; when a newer one streams in, they swap before paint. |
 | 🎯 | **Zap mode** | Point at stubborn UI, widen or narrow the selection, and save a reversible custom hide rule. |
 | 🏎️ | **Instant UI** | Removes transitions and smooth scrolling that can make overloaded pages feel slower. |
 | 🪶 | **Optional blur removal** | Disables expensive backdrop blur on weaker GPUs. |
@@ -41,17 +42,17 @@ Every optimization can be switched off instantly. Detached nodes are held in mem
 
 ### What the default settings change
 
-On the included 141-turn offline fixture, GPT Delagger's default settings reduce the live page from 141 turns to 30 and from 839 DOM elements to 175.
+On the included 141-turn offline fixture, GPT Delagger's default settings reduce the live page from 141 turns to 30 and from 831 DOM elements to 164.
 
 | State | Live turns | Live DOM elements |
 | --- | ---: | ---: |
-| GPT Delagger off | 141 | 839 |
-| Default settings | 30 | 175 |
+| GPT Delagger off | 141 | 831 |
+| Default settings | 30 | 164 |
 
-That means 107 old turns and 4 tool embeds are detached, leaving about **79% fewer live DOM elements** for the browser to manage.
+That means 107 old turns and 4 tool embeds are detached, leaving about **80% fewer live DOM elements** for the browser to manage.
 
 > [!NOTE]
-> Measured with `test/mock.html` on v1.4.0. This fixture demonstrates DOM reduction; it is not a universal FPS or latency claim.
+> Measured with `test/mock.html` on v1.5.0. This fixture demonstrates DOM reduction; it is not a universal FPS or latency claim.
 
 ## Install in 60 seconds
 
@@ -83,6 +84,8 @@ Choose how many recent turns stay mounted. Older turns are replaced by comment p
 ### Block heavy embeds
 
 The blocker targets known tool UI rather than hiding arbitrary prose. It handles native connector headers, sandboxed app iframes, tool-role messages, compact run-status cards, connector failure UI, separators, and large image-generation loading frames. Completed images and ordinary answers are preserved.
+
+With **Keep newest embed** on, the most recent tool embed stays on screen while everything older is detached. When a newer embed streams in, the two swap in the same before-paint pass, so you always see the tool call that is currently relevant without paying for the rest.
 
 ### Zap anything the heuristic misses
 
