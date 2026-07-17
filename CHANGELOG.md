@@ -2,6 +2,38 @@
 
 All notable changes to GPT Delagger are documented here.
 
+## [1.6.0] - 2026-07-17
+
+### Fixed
+
+- **Clicks stopped working on chatgpt.com.** Every version up to 1.5.1 physically detached old turns and tool embeds from the DOM, holding them in memory behind comment placeholders. ChatGPT is React, and React keeps fiber references to the exact nodes it rendered. Remove one from under it and React's next `removeChild` or `insertBefore` against that node throws `NotFoundError` inside its commit phase — which React cannot recover from, so it tears the tree down. The page kept its painted pixels and lost every event handler: it looked fine and ignored clicks. It was intermittent because it only fired when React reached back into a trimmed region (regenerating, editing an older message, switching branches, streaming near a hidden embed).
+
+  Nothing is detached any more. Old turns and tool embeds stay mounted and are hidden with `display:none`, which the browser skips for layout and paint just as effectively, and which React does not care about at all.
+
+### Changed
+
+- Trimming and embed blocking now hide rather than detach, so the "reversible placeholder" machinery is gone: no comment markers, no off-DOM node maps, no pruning, no restore-into-position. Reverting a setting drops an attribute. This removes ~70 lines and a class of ordering bugs with it.
+- `stats()` counts hidden turns and embeds instead of detached ones.
+
+- Keeping turns mounted removed a benefit detaching had given by accident: old turns used to leave the document, so every later scan was smaller. Without that, re-deriving each turn and re-checking each hidden turn for the composer on every pass measured ~3x of 1.4.0 on load. Turn discovery now reads its own tag back with `closest()`, and a turn already hidden is not re-scanned — which lands the load path below every previous version.
+
+### Measured
+
+On the 141-turn fixture at default settings, 693 of 835 thread elements (83%) are taken out of layout and paint — comparable to what detaching achieved — while 0 nodes leave the DOM.
+
+| | up to 1.5.1 | 1.6.0 |
+|---|---|---|
+| React `removeChild` on an old turn | `NotFoundError` | no error |
+| React `insertBefore` before an old turn | `NotFoundError` | no error |
+| elements taken out of rendering | ~80% | ~83% |
+| nodes detached from the DOM | 111 | 0 |
+
+DOM queries during load, same fixture: 1.4.0 1688, 1.5.0 2486, 1.5.1 1818, **1.6.0 1028**. Observer-callback time while streaming stays at or below 1.4.0.
+
+Hidden turns still occupy memory and React still reconciles them — that cost is the page's, with or without this extension.
+
+[1.6.0]: https://github.com/throwingogo-hub/chatgpt-delagger/releases/tag/v1.6.0
+
 ## [1.5.1] - 2026-07-17
 
 ### Fixed

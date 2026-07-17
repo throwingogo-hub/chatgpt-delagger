@@ -4,7 +4,7 @@
   <p><strong>Make long ChatGPT conversations feel light again.</strong></p>
   <p>
     A tiny, privacy-first Chrome extension that trims rendering work from long chats<br>
-    and detaches heavy MCP, connector, and tool-call embeds.
+    and hides heavy MCP, connector, and tool-call embeds.
   </p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f0a93c" alt="MIT License"></a>
@@ -31,28 +31,31 @@ Long ChatGPT threads can become expensive to lay out and repaint. Tool calls can
 | | Feature | What it changes |
 | --- | --- | --- |
 | ⚡ | **Lightweight rendering** | Uses `content-visibility: auto` so off-screen messages skip layout and paint work. |
-| ✂️ | **Reversible chat trimming** | Detaches old turns from the live DOM and restores them on demand. Keep anywhere from 0 to 100 recent turns mounted. |
-| 🧩 | **Heavy embed blocking** | Detaches MCP apps, connector cards, tool-run UI, failure fallbacks, and image-generation loading frames. |
-| 📌 | **Keep newest embed** | Optional: only the latest tool embed stays mounted; when a newer one streams in, they swap before paint. |
+| ✂️ | **Reversible chat trimming** | Hides old turns so the browser skips their layout and paint, and reveals them on demand. Keep anywhere from 0 to 100 recent turns visible. |
+| 🧩 | **Heavy embed blocking** | Hides MCP apps, connector cards, tool-run UI, failure fallbacks, and image-generation loading frames. |
+| 📌 | **Keep newest embed** | Optional: only the latest tool embed stays visible; when a newer one streams in, they swap before paint. |
 | 🎯 | **Zap mode** | Point at stubborn UI, widen or narrow the selection, and save a reversible custom hide rule. |
 | 🏎️ | **Instant UI** | Removes transitions and smooth scrolling that can make overloaded pages feel slower. |
 | 🪶 | **Optional blur removal** | Disables expensive backdrop blur on weaker GPUs. |
 
-Every optimization can be switched off instantly. Detached nodes are held in memory with lightweight placeholders and restored in their original position; GPT Delagger does not delete server-side messages.
+Every optimization can be switched off instantly. Nothing is removed from the page: hidden turns and embeds stay in the DOM and are revealed by dropping an attribute. GPT Delagger does not delete server-side messages.
+
+> [!IMPORTANT]
+> Up to v1.5.1 the trimmer physically detached old turns from the DOM. ChatGPT is React, and React keeps references to the nodes it rendered — so detaching them could make React throw while reconciling, tearing down the tree and leaving a page that still looked fine but ignored clicks. Since v1.6.0 nothing is detached. See the [changelog](CHANGELOG.md#160---2026-07-17).
 
 ### What the default settings change
 
-On the included 141-turn offline fixture, GPT Delagger's default settings reduce the live page from 141 turns to 30 and from 831 DOM elements to 164.
+On the included 141-turn offline fixture, GPT Delagger's default settings take 693 of 835 thread elements out of the browser's layout and paint work, leaving 142 rendered.
 
-| State | Live turns | Live DOM elements |
+| State | Turns rendered | Elements rendered |
 | --- | ---: | ---: |
 | GPT Delagger off | 141 | 831 |
-| Default settings | 30 | 164 |
+| Default settings | 26 | 142 |
 
-That means 107 old turns and 4 tool embeds are detached, leaving about **80% fewer live DOM elements** for the browser to manage.
+That is 111 old turns plus the tool embeds hidden — about **83% fewer elements** for the browser to lay out and paint. All of them remain in the DOM, where React still owns them and pays its own reconciliation cost, exactly as it does without the extension.
 
 > [!NOTE]
-> Measured with `test/mock.html` on v1.5.0. This fixture demonstrates DOM reduction; it is not a universal FPS or latency claim.
+> Measured with `test/mock.html` on v1.6.0, counting elements inside a hidden subtree. This fixture demonstrates how much the browser stops rendering; it is not an FPS or latency claim, and hidden elements still occupy memory.
 
 ## Install in 60 seconds
 
@@ -79,13 +82,13 @@ When updating an unpacked installation, pull or replace the files, click **Reloa
 
 ### Trim long chats
 
-Choose how many recent turns stay mounted. Older turns are replaced by comment placeholders before paint. **Show more**, **Show all**, or disabling trimming restores the original nodes. A value of `0` detaches every turn until you reveal some.
+Choose how many recent turns stay visible. Older turns are hidden before paint, so the browser skips their layout and paint while they stay in the page. **Show more**, **Show all**, or disabling trimming reveals them again. A value of `0` hides every turn until you reveal some.
 
 ### Block heavy embeds
 
 The blocker targets known tool UI rather than hiding arbitrary prose. It handles native connector headers, sandboxed app iframes, tool-role messages, compact run-status cards, connector failure UI, separators, and large image-generation loading frames. Completed images and ordinary answers are preserved.
 
-With **Keep newest embed** on, the most recent tool embed stays on screen while everything older is detached. When a newer embed streams in, the two swap in the same before-paint pass, so you always see the tool call that is currently relevant without paying for the rest.
+With **Keep newest embed** on, the most recent tool embed stays on screen while everything older is hidden. When a newer embed streams in, the two swap in the same before-paint pass, so you always see the tool call that is currently relevant without paying to render the rest.
 
 ### Zap anything the heuristic misses
 
@@ -111,7 +114,7 @@ Your conversations never leave the browser through this extension. See [SECURITY
 
 ## Honest expectations
 
-This extension targets browser rendering cost: scrolling, repainting, hover effects, and the amount of live DOM. Typing may also improve, but ChatGPT's own React state updates still contribute to input latency. For extremely large conversations, a fresh chat remains the most effective reset.
+This extension targets browser rendering cost: scrolling, repainting, hover effects, and how much of the page must be laid out and painted. Hidden turns stay in the DOM, so they still cost memory and React still reconciles them. Typing may also improve, but ChatGPT's own React state updates still contribute to input latency. For extremely large conversations, a fresh chat remains the most effective reset.
 
 ChatGPT's markup changes regularly. GPT Delagger uses conservative heuristics and regression fixtures, but a site update can temporarily break a detector. If that happens, use Zap mode and [open a bug report](https://github.com/throwingogo-hub/chatgpt-delagger/issues/new?template=bug_report.yml).
 

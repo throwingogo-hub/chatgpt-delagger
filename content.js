@@ -11,7 +11,7 @@
   'use strict';
 
   const IS_EXT = typeof chrome !== 'undefined' && !!(chrome.storage && chrome.storage.sync);
-  const EXT_VERSION = '1.5.1';
+  const EXT_VERSION = '1.6.0';
 
   const DEFAULTS = {
     enabled: true,
@@ -29,10 +29,16 @@
   let extraShown = 0;      // "Show N more" clicks, per conversation
   let showAll = false;     // "Show all" click, per conversation
   let lastPath = location.pathname;
-  // Tool UI is physically detached from the live DOM. Comment placeholders
-  // preserve its exact position so turning the option off is reversible.
-  const blockedTools = new Map(); // detached Element -> connected Comment
-  const trimmedTurns = new Map(); // detached turn Element -> connected Comment
+  // Nothing is unmounted. Old turns and tool UI stay in the DOM and are hidden
+  // with our own attributes, which the stylesheet turns into display:none.
+  //
+  // Detaching them was faster on paper and cost the page its interactivity:
+  // chatgpt.com is React, and React holds fiber references to the exact nodes
+  // it rendered. Take one out from under it and its next removeChild or
+  // insertBefore throws NotFoundError inside the commit phase — unrecoverable,
+  // so React tears the tree down and the page keeps its pixels but drops every
+  // handler. That is the "sometimes clicks do nothing" bug. display:none is
+  // free for React and still skips layout and paint for the hidden subtree.
 
   const MSG_SEL = '[data-message-author-role]';
   const PROSE_SEL = 'p,ul,ol,pre,blockquote,table,h1,h2,h3,h4,img';
@@ -105,7 +111,7 @@
   // ---------------------------------------------------------------- turns
   // A "turn" is the outermost ancestor of a message that still wraps only that
   // one message — i.e. the per-message block in the thread list.
-  // Anything the user can type into must never end up inside a detached turn.
+  // Anything the user can type into must never end up inside a hidden turn.
   // In a one-message conversation the sibling-count check can't stop the climb,
   // so this guard is what keeps the composer out of the discovered turn block.
   const COMPOSER_SEL = 'form,textarea,[contenteditable="true"]';
@@ -113,8 +119,8 @@
   // ancestor to search its whole subtree for a composer that is never inside a
   // turn scanned the thread over and over. Walk up from the handful of real
   // composers instead: contains() costs the node's depth, not the subtree.
-  // The cache lives for one synchronous pass; detachTrimmedTurn re-checks
-  // exactly before it detaches anything, so a stale miss cannot lose the box.
+  // The cache lives for one synchronous pass; hideOldTurn re-checks exactly
+  // before it hides anything, so a stale miss cannot hide the box.
   let composers = null;
   function holdsComposer(el) {
     if (!composers) composers = [...document.querySelectorAll(COMPOSER_SEL)];
@@ -134,114 +140,61 @@
   }
 
   function getTurns() {
-    pruneTrimmedTurns();
+    // Every turn stays mounted, so the query already yields document order.
+    // Turns also stay mounted between passes, which is why the tag is worth
+    // reading back: turnOf costs a subtree scan per ancestor, and re-deriving
+    // it for every message on every pass is what the detaching versions avoided
+    // by simply removing old turns from the document. closest() costs depth.
     const msgs = document.querySelectorAll(MSG_SEL);
     const turns = [];
     const seen = new Set();
     for (const m of msgs) {
-      const t = turnOf(m);
+      const t = m.closest('[data-gptdelag-turn]') || turnOf(m);
       if (!seen.has(t)) { seen.add(t); turns.push(t); }
     }
-    // Detached turns no longer contain live queryable messages, so merge them
-    // back into the logical list using their connected comment placeholders.
-    for (const t of trimmedTurns.keys()) {
-      if (!seen.has(t)) { seen.add(t); turns.push(t); }
-    }
-    turns.sort((a, b) => {
-      const ap = a.isConnected ? a : trimmedTurns.get(a);
-      const bp = b.isConnected ? b : trimmedTurns.get(b);
-      if (!ap || !bp || ap === bp) return 0;
-      const relation = ap.compareDocumentPosition(bp);
-      if (relation & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-      if (relation & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-      return 0;
-    });
-    for (const t of turns) if (t.isConnected) t.setAttribute('data-gptdelag-turn', '');
+    for (const t of turns) t.setAttribute('data-gptdelag-turn', '');
     return turns;
   }
 
-  function detachTrimmedTurn(turn) {
-    if (!turn || !turn.isConnected || trimmedTurns.has(turn)) return;
-    // Never detach page chrome, even if turn discovery over-reached.
+  function hideOldTurn(turn) {
+    if (!turn || !turn.isConnected) return;
+    if (turn.hasAttribute('data-gptdelag-old')) return; // already hidden; don't re-scan
+    // Never hide page chrome, even if turn discovery over-reached.
     if (turn === document.body || turn.tagName === 'MAIN'
         || turn.querySelector(COMPOSER_SEL)) return;
-    turn.setAttribute('data-gptdelag-old', '1'); // pre-detach CSS safety net
-    const marker = document.createComment('gptdelag-trim-placeholder');
-    turn.replaceWith(marker);
-    trimmedTurns.set(turn, marker);
+    turn.setAttribute('data-gptdelag-old', '1');
   }
 
-  function restoreTrimmedTurn(turn) {
-    const marker = trimmedTurns.get(turn);
-    if (!marker) {
-      turn && turn.removeAttribute('data-gptdelag-old');
-      return;
-    }
-    turn.removeAttribute('data-gptdelag-old');
-    if (marker.isConnected) marker.replaceWith(turn);
-    trimmedTurns.delete(turn);
+  function showOldTurn(turn) {
+    if (turn) turn.removeAttribute('data-gptdelag-old');
   }
 
   function restoreTrimmedTurns() {
-    for (const turn of [...trimmedTurns.keys()]) restoreTrimmedTurn(turn);
-  }
-
-  function pruneTrimmedTurns() {
-    for (const [turn, marker] of trimmedTurns) {
-      if (marker.isConnected) continue;
-      turn.removeAttribute('data-gptdelag-old');
-      trimmedTurns.delete(turn);
-    }
-  }
-
-  function discardTrimmedTurns() {
-    for (const [turn, marker] of trimmedTurns) {
-      turn.removeAttribute('data-gptdelag-old');
-      if (marker.isConnected) marker.remove();
-    }
-    trimmedTurns.clear();
+    for (const el of document.querySelectorAll('[data-gptdelag-old]'))
+      el.removeAttribute('data-gptdelag-old');
   }
 
   function blockToolNode(el) {
-    if (!el || el.nodeType !== 1 || !el.isConnected || blockedTools.has(el)) return;
+    if (!el || el.nodeType !== 1 || !el.isConnected) return;
+    if (el.hasAttribute('data-gptdelag-tool')) return;
+    // An ancestor already hidden takes this node with it.
+    if (el.parentElement && el.parentElement.closest('[data-gptdelag-tool]')) return;
     // Keep-newest mode: the flagged embed — and anything containing or inside
-    // it — stays live until enforceToolKeep moves the flag to a newer embed.
+    // it — stays visible until enforceToolKeep moves the flag to a newer embed.
     // With nothing flagged, no ancestor or descendant can match, so the empty
     // set short-circuits both scans rather than searching the subtree per call.
     if (keptEls.size && (el.closest('[data-gptdelag-keep]')
         || (el.querySelector && el.querySelector('[data-gptdelag-keep]')))) return;
-    el.setAttribute('data-gptdelag-tool', '1'); // pre-detach CSS safety net
-    const marker = document.createComment('gptdelag-tool-placeholder');
-    el.replaceWith(marker);
-    blockedTools.set(el, marker);
-  }
-
-  function pruneBlockedTools() {
-    for (const [node, marker] of blockedTools) {
-      // A tool placeholder may temporarily live inside an old turn that the
-      // trimmer detached. parentNode keeps that reversible nested state alive.
-      if (marker.parentNode) continue;
-      node.removeAttribute('data-gptdelag-tool');
-      blockedTools.delete(node);
-    }
+    el.setAttribute('data-gptdelag-tool', '1');
+    // This flag supersedes any flag underneath it, so the newest-embed search
+    // below only ever sees the outermost hidden node of each embed.
+    for (const inner of el.querySelectorAll('[data-gptdelag-tool]'))
+      inner.removeAttribute('data-gptdelag-tool');
   }
 
   function restoreBlockedTools() {
-    for (const [node, marker] of blockedTools) {
-      node.removeAttribute('data-gptdelag-tool');
-      if (marker.parentNode) marker.replaceWith(node);
-      blockedTools.delete(node);
-    }
-  }
-
-  // A detached old conversation must never be restored into a newly opened
-  // chat. Remove its placeholders and forget the saved nodes on SPA switches.
-  function discardBlockedTools() {
-    for (const [node, marker] of blockedTools) {
-      node.removeAttribute('data-gptdelag-tool');
-      if (marker.parentNode) marker.remove();
-    }
-    blockedTools.clear();
+    for (const el of document.querySelectorAll('[data-gptdelag-tool]'))
+      el.removeAttribute('data-gptdelag-tool');
   }
 
   // ---------------------------------------------------------- keep-newest embed
@@ -273,73 +226,54 @@
     return !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
   }
 
-  function newestBlockedMarker() {
-    let newest = null;
-    for (const marker of blockedTools.values()) {
-      if (!marker.isConnected) continue; // nested inside a trimmed turn → stays old
-      if (!newest || isBefore(newest, marker)) newest = marker;
-    }
-    return newest;
+  function blockedToolNodes() { // hidden embeds, in document order
+    return [...document.querySelectorAll('[data-gptdelag-tool]')];
   }
 
-  // One embed can be detached as several sibling nodes (connector header, app
-  // iframe, trailing separator). The group of a marker is every blocked marker
-  // in the same tagged turn or, outside message wrappers, the run of adjacent
-  // sibling markers. A blocked node that is itself a whole turn is its own group.
-  function markerGroup(marker) {
-    const entries = [...blockedTools].filter(([, m]) => m.isConnected);
-    const group = new Set([marker]);
-    const turn = marker.parentElement && marker.parentElement.closest('[data-gptdelag-turn]');
+  // One embed can be several sibling nodes (connector header, app iframe,
+  // trailing separator). The group of a node is every hidden node in the same
+  // tagged turn or, outside message wrappers, the run of adjacent hidden
+  // siblings. A hidden node that is itself a whole turn is its own group.
+  function toolGroup(node) {
+    const blocked = blockedToolNodes();
+    const group = new Set([node]);
+    const turn = node.closest('[data-gptdelag-turn]');
     if (turn) {
-      for (const [, m] of entries) if (turn.contains(m)) group.add(m);
+      for (const n of blocked) if (turn.contains(n)) group.add(n);
       return group;
     }
-    const nodeFor = new Map(entries.map(([n, m]) => [m, n]));
-    const wholeTurn = m => {
-      const n = nodeFor.get(m);
-      return !n || n.matches(MSG_SEL) || !!n.querySelector(MSG_SEL);
-    };
-    if (wholeTurn(marker)) return group;
-    const skipWs = (n, dir) => {
-      while (n && n.nodeType === 3 && !n.textContent.trim()) n = n[dir];
-      return n;
-    };
-    for (const dir of ['previousSibling', 'nextSibling']) {
-      let n = skipWs(marker[dir], dir);
-      while (n && nodeFor.has(n) && !wholeTurn(n)) { group.add(n); n = skipWs(n[dir], dir); }
+    const isBlocked = new Set(blocked);
+    const wholeTurn = n => n.matches(MSG_SEL) || !!n.querySelector(MSG_SEL);
+    if (wholeTurn(node)) return group;
+    for (const dir of ['previousElementSibling', 'nextElementSibling']) {
+      let n = node[dir];
+      while (n && isBlocked.has(n) && !wholeTurn(n)) { group.add(n); n = n[dir]; }
     }
     return group;
   }
 
-  function restoreKeepGroup(group) {
-    // Restoring a node can reconnect markers nested inside it — loop until the
-    // kept subtree holds no blocked placeholders.
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const [node, m] of [...blockedTools]) {
-        const inKept = m.isConnected && m.parentElement
-          && m.parentElement.closest('[data-gptdelag-keep]');
-        if (!group.has(m) && !inKept) continue;
-        node.removeAttribute('data-gptdelag-tool');
-        if (group.has(m)) { node.setAttribute('data-gptdelag-keep', '1'); keptEls.add(node); }
-        if (m.isConnected) m.replaceWith(node);
-        blockedTools.delete(node);
-        changed = true;
-      }
+  function keepGroup(group) {
+    for (const node of group) {
+      node.removeAttribute('data-gptdelag-tool');
+      node.setAttribute('data-gptdelag-keep', '1');
+      keptEls.add(node);
+      // A kept embed must not stay hidden by a flag deeper inside it.
+      for (const inner of node.querySelectorAll('[data-gptdelag-tool]'))
+        inner.removeAttribute('data-gptdelag-tool');
     }
   }
 
   function enforceToolKeep() {
     if (!S.enabled || !S.hideTools) return;
     if (!S.toolsKeepNewest) { unkeepAll(true); return; }
-    const marker = newestBlockedMarker();
-    if (!marker) return;                       // nothing newer blocked → kept set stands
+    const blocked = blockedToolNodes();
+    const newest = blocked[blocked.length - 1];
+    if (!newest) return;                       // nothing newer hidden → kept set stands
     const kept = keptNodes();
     const anchor = kept[kept.length - 1];      // last kept node in document order
-    if (anchor && isBefore(marker, anchor)) return; // kept embed is still the newest
+    if (anchor && isBefore(newest, anchor)) return; // kept embed is still the newest
     unkeepAll(true);
-    restoreKeepGroup(markerGroup(marker));
+    keepGroup(toolGroup(newest));
   }
 
   // ---------------------------------------------------------------- trimming
@@ -376,10 +310,11 @@
       ? configuredKeep + extraShown
       : Infinity;
     const cut = Math.max(0, turns.length - keep);
-    // Restore the desired tail first, then detach the old prefix. Detached
-    // turns have no layout, paint, event, or React subtree cost in the page.
-    for (let i = cut; i < turns.length; i++) restoreTrimmedTurn(turns[i]);
-    for (let i = 0; i < cut; i++) detachTrimmedTurn(turns[i]);
+    // Reveal the desired tail first, then hide the old prefix. Hidden turns
+    // cost no layout or paint; they keep only their memory and React's own
+    // reconciliation, which the page pays for whether we are here or not.
+    for (let i = cut; i < turns.length; i++) showOldTurn(turns[i]);
+    for (let i = 0; i < cut; i++) hideOldTurn(turns[i]);
     if (cut > 0) {
       const p = ensurePill();
       p._label.textContent = `${cut} earlier message${cut === 1 ? '' : 's'} hidden for speed`;
@@ -390,11 +325,11 @@
           && (p.nextElementSibling !== anchor || p.parentElement !== anchor.parentElement)) {
         anchor.parentElement.insertBefore(p, anchor);
       } else if (!anchor) {
-        // keep=0: every turn is detached, so place the controls immediately
-        // after the newest placeholder instead of requiring one live turn.
-        const marker = trimmedTurns.get(turns[cut - 1]);
-        if (marker && marker.isConnected && marker.nextSibling !== p)
-          marker.parentNode.insertBefore(p, marker.nextSibling);
+        // keep=0: every turn is hidden, so anchor the controls after the
+        // newest one rather than requiring a visible turn to sit before.
+        const last = turns[turns.length - 1];
+        if (last && last.parentElement && last.nextSibling !== p)
+          last.parentElement.insertBefore(p, last.nextSibling);
       }
     } else if (pill && pill.isConnected) {
       pill.remove();
@@ -595,11 +530,9 @@
       lastPath = location.pathname;
       extraShown = 0;
       showAll = false;
-      discardBlockedTools();
-      discardTrimmedTurns();
+      // Nothing is held off-DOM, so a new conversation has nothing to discard:
+      // React removes the old turns and our flags leave with them.
     }
-    pruneBlockedTools();
-    pruneTrimmedTurns();
     if (!S.enabled || !S.hideTools) { restoreBlockedTools(); unkeepAll(false); }
     if (!S.enabled || !S.trimEnabled) restoreTrimmedTurns();
     setCss(buildCss());
@@ -775,16 +708,18 @@
     const turns = getTurns();
     let tools = 0;
     if (S.enabled && S.hideTools) {
-      pruneBlockedTools();
       const marked = new Set(document.querySelectorAll('[data-gptdelag-tool]'));
-      for (const el of document.querySelectorAll('[data-message-author-role="tool"]')) marked.add(el);
-      tools = blockedTools.size + marked.size;
+      // role="tool" turns are hidden by the stylesheet without needing a flag.
+      for (const el of document.querySelectorAll('[data-message-author-role="tool"]')) {
+        if (!el.closest('[data-gptdelag-keep]')) marked.add(el);
+      }
+      tools = marked.size;
     }
     return {
       onSite: true,
       enabled: S.enabled,
       turns: turns.length,
-      trimmed: trimmedTurns.size + document.querySelectorAll('[data-gptdelag-old]').length,
+      trimmed: document.querySelectorAll('[data-gptdelag-old]').length,
       tools
     };
   }
