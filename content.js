@@ -11,7 +11,7 @@
   'use strict';
 
   const IS_EXT = typeof chrome !== 'undefined' && !!(chrome.storage && chrome.storage.sync);
-  const EXT_VERSION = '1.5.0';
+  const EXT_VERSION = '1.5.1';
 
   const DEFAULTS = {
     enabled: true,
@@ -109,13 +109,25 @@
   // In a one-message conversation the sibling-count check can't stop the climb,
   // so this guard is what keeps the composer out of the discovered turn block.
   const COMPOSER_SEL = 'form,textarea,[contenteditable="true"]';
+  // turnOf runs for every message at every ancestor level, so asking each
+  // ancestor to search its whole subtree for a composer that is never inside a
+  // turn scanned the thread over and over. Walk up from the handful of real
+  // composers instead: contains() costs the node's depth, not the subtree.
+  // The cache lives for one synchronous pass; detachTrimmedTurn re-checks
+  // exactly before it detaches anything, so a stale miss cannot lose the box.
+  let composers = null;
+  function holdsComposer(el) {
+    if (!composers) composers = [...document.querySelectorAll(COMPOSER_SEL)];
+    for (const c of composers) if (c !== el && el.contains(c)) return true;
+    return false;
+  }
   function turnOf(msg) {
     let turn = msg;
     for (let i = 0; i < 10; i++) {
       const p = turn.parentElement;
       if (!p || p === document.body || p.tagName === 'MAIN') break;
       if (p.querySelectorAll(MSG_SEL).length > 1) break; // parent holds siblings → stop
-      if (p.querySelector(COMPOSER_SEL)) break;
+      if (holdsComposer(p)) break;
       turn = p;
     }
     return turn;
@@ -194,8 +206,10 @@
     if (!el || el.nodeType !== 1 || !el.isConnected || blockedTools.has(el)) return;
     // Keep-newest mode: the flagged embed — and anything containing or inside
     // it — stays live until enforceToolKeep moves the flag to a newer embed.
-    if (el.closest('[data-gptdelag-keep]')
-        || (el.querySelector && el.querySelector('[data-gptdelag-keep]'))) return;
+    // With nothing flagged, no ancestor or descendant can match, so the empty
+    // set short-circuits both scans rather than searching the subtree per call.
+    if (keptEls.size && (el.closest('[data-gptdelag-keep]')
+        || (el.querySelector && el.querySelector('[data-gptdelag-keep]')))) return;
     el.setAttribute('data-gptdelag-tool', '1'); // pre-detach CSS safety net
     const marker = document.createComment('gptdelag-tool-placeholder');
     el.replaceWith(marker);
@@ -235,13 +249,22 @@
   // restored and flagged with data-gptdelag-keep; every older embed stays
   // detached. When a newer embed appears, the flag moves to it in the same
   // synchronous pass, so old and new swap before the next paint.
+  // The flagged elements are tracked here as well as in the attribute. The
+  // observer pass below runs on every mutation batch, including every streamed
+  // token, so it must not pay a document-wide query to learn what it already
+  // knows — especially while the feature is off and the answer is always none.
+  const keptEls = new Set();
+
   function keptNodes() {
-    return [...document.querySelectorAll('[data-gptdelag-keep]')];
+    for (const el of keptEls) if (!el.isConnected) keptEls.delete(el);
+    return [...keptEls].sort((a, b) => (isBefore(a, b) ? -1 : 1));
   }
 
   function unkeepAll(reblock) {
+    if (!keptEls.size) return;
     for (const el of keptNodes()) {
       el.removeAttribute('data-gptdelag-keep');
+      keptEls.delete(el);
       if (reblock) blockToolNode(el);
     }
   }
@@ -299,7 +322,7 @@
           && m.parentElement.closest('[data-gptdelag-keep]');
         if (!group.has(m) && !inKept) continue;
         node.removeAttribute('data-gptdelag-tool');
-        if (group.has(m)) node.setAttribute('data-gptdelag-keep', '1');
+        if (group.has(m)) { node.setAttribute('data-gptdelag-keep', '1'); keptEls.add(node); }
         if (m.isConnected) m.replaceWith(node);
         blockedTools.delete(node);
         changed = true;
@@ -566,6 +589,7 @@
   }
 
   function apply() {
+    composers = null;
     document.documentElement.setAttribute('data-gptdelag-version', EXT_VERSION);
     if (location.pathname !== lastPath) {  // SPA conversation switch
       lastPath = location.pathname;
@@ -586,6 +610,7 @@
   }
 
   const mo = new MutationObserver(muts => {
+    composers = null; // this batch may have re-rendered the composer
     // Inspect only newly changed neighborhoods for the before-paint exact pass;
     // the slower chip heuristic remains debounced in apply().
     if (S.enabled && S.hideTools) {
@@ -746,6 +771,7 @@
 
   // ---------------------------------------------------------------- stats
   function stats() {
+    composers = null;
     const turns = getTurns();
     let tools = 0;
     if (S.enabled && S.hideTools) {

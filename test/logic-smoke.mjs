@@ -41,7 +41,8 @@ assert.match(mock, /class="connector-app"/, 'connector iframe fixture is missing
 assert.match(mock, /class="connector-fallback"/, 'connector failure fixture is missing');
 assert.match(mock, /this\.shadowRoot \|\| this\.attachShadow/, 'shadow fixture must survive detach and restore');
 assert.match(mock, /id="composer"/, 'composer fixture is missing');
-assert.match(content, /p\.querySelector\(COMPOSER_SEL\)\) break/, 'turn discovery must stop before the composer');
+assert.match(content, /holdsComposer\(p\)\) break/, 'turn discovery must stop before the composer');
+assert.match(content, /turn\.querySelector\(COMPOSER_SEL\)\) return/, 'detach must re-check for the composer exactly, not from the cache');
 assert.match(content, /turn\.tagName === 'MAIN'/, 'page chrome must never be detached as a turn');
 assert.match(content, /newValue \?\? DEFAULTS\[k\]/, 'removed storage keys must fall back to defaults');
 assert.match(popup, /e\.target\.value = \$\('trimKeep'\)\.value/, 'cleared keep box must restore, not collapse to 0');
@@ -56,7 +57,19 @@ assert.ok(mock.indexOf('i % 28 === 0') < mock.indexOf('i % 14 === 0'), 'Chinese 
 assert.deepEqual(manifest.permissions, ['storage'], 'extension should retain storage-only permission');
 assert.match(popupHtml, /id="trimKeep" min="0" max="100" step="1"/, 'slider must cover 0 through 100');
 assert.match(popupHtml, /type="number" id="trimKeepVal" min="0" max="100"/, 'editable keep-count box is missing');
-assert.equal(manifest.version, '1.5.0');
+assert.equal(manifest.version, '1.5.1');
+
+// Hot-path guards. The observer callback runs on every mutation batch, including
+// every streamed token, so nothing in it may scan the document for state the
+// script already tracks — that is exactly what made 1.5.0 slower than 1.4.0.
+assert.doesNotMatch(content, /document\.querySelectorAll\('\[data-gptdelag-keep\]'\)/,
+  'kept embeds must be tracked in a set, not re-queried from the document each batch');
+assert.match(content, /if \(!keptEls\.size\) return;/,
+  'unkeepAll must short-circuit when nothing is flagged');
+assert.match(content, /keptEls\.size && \(el\.closest/,
+  'blockToolNode must not scan a subtree for keep flags when none exist');
+assert.doesNotMatch(content, /if \(p\.querySelector\(COMPOSER_SEL\)\)/,
+  'per-ancestor composer subtree scans must not come back into turn discovery');
 assert.doesNotMatch(popup, /tab\.url/, 'popup must not require tabs URL permission');
 
 console.log('logic smoke checks passed');
