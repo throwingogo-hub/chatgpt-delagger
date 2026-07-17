@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GPT Delagger",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Speed up long ChatGPT chats by trimming old messages, reducing rendering work, and detaching heavy tool embeds.",
   "homepage_url": "https://github.com/throwingogo-hub/chatgpt-delagger",
   "minimum_chrome_version": "111",
